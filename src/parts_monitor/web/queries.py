@@ -27,29 +27,52 @@ class GroupRow:
     price_diff: float | None
 
 
-def _latest_price(session: Session, product_id: int) -> PriceHistory | None:
-    return (
+def _latest_prices_by_product(session: Session, product_ids: list[int]) -> dict[int, PriceHistory]:
+    """Последняя цена на товар, без N+1: один запрос на все товары сразу."""
+    if not product_ids:
+        return {}
+
+    history = (
         session.query(PriceHistory)
-        .filter_by(product_id=product_id)
-        .order_by(PriceHistory.scraped_at.desc())
-        .first()
+        .filter(PriceHistory.product_id.in_(product_ids))
+        .order_by(PriceHistory.product_id, PriceHistory.scraped_at.desc())
+        .all()
     )
+    latest: dict[int, PriceHistory] = {}
+    for entry in history:
+        if entry.product_id not in latest:
+            latest[entry.product_id] = entry
+    return latest
 
 
 def get_dashboard_rows(session: Session) -> list[GroupRow]:
-    groups = session.query(MatchGroup).all()
+    groups = {g.id: g for g in session.query(MatchGroup).all()}
+    if not groups:
+        return []
+
+    matches = session.query(ProductMatch).filter(ProductMatch.match_group_id.in_(groups.keys())).all()
+    products = {
+        p.id: p
+        for p in session.query(Product).filter(Product.id.in_([m.product_id for m in matches])).all()
+    }
+    sources = {s.id: s for s in session.query(Source).all()}
+    latest_by_product = _latest_prices_by_product(session, list(products.keys()))
+
+    matches_by_group: dict[int, list[ProductMatch]] = {}
+    for m in matches:
+        matches_by_group.setdefault(m.match_group_id, []).append(m)
+
     rows: list[GroupRow] = []
 
-    for group in groups:
-        matches = session.query(ProductMatch).filter_by(match_group_id=group.id).all()
+    for group_id, group in groups.items():
         prices: list[SourcePrice] = []
 
-        for pm in matches:
-            product = session.query(Product).get(pm.product_id)
+        for pm in matches_by_group.get(group_id, []):
+            product = products.get(pm.product_id)
             if product is None:
                 continue
-            source = session.query(Source).get(product.source_id)
-            latest = _latest_price(session, product.id)
+            source = sources.get(product.source_id)
+            latest = latest_by_product.get(product.id)
             if latest is None:
                 continue
             prices.append(
@@ -121,19 +144,28 @@ def get_source_price_history(session: Session, source_name: str) -> list[Product
         return []
 
     products = session.query(Product).filter_by(source_id=source.id).all()
+    if not products:
+        return []
+
+    product_ids = [p.id for p in products]
+    history = (
+        session.query(PriceHistory)
+        .filter(PriceHistory.product_id.in_(product_ids))
+        .order_by(PriceHistory.product_id, PriceHistory.scraped_at.asc())
+        .all()
+    )
+    history_by_product: dict[int, list[PriceHistory]] = {}
+    for entry in history:
+        history_by_product.setdefault(entry.product_id, []).append(entry)
+
     rows: list[ProductHistoryRow] = []
 
     for product in products:
-        history = (
-            session.query(PriceHistory)
-            .filter_by(product_id=product.id)
-            .order_by(PriceHistory.scraped_at.asc())
-            .all()
-        )
-        if not history:
+        product_history = history_by_product.get(product.id)
+        if not product_history:
             continue
 
-        snapshots = [PriceSnapshot(price=h.price, scraped_at=h.scraped_at) for h in history]
+        snapshots = [PriceSnapshot(price=h.price, scraped_at=h.scraped_at) for h in product_history]
 
         last_change = None
         last_change_pct = None
