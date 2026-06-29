@@ -50,6 +50,23 @@
       font-size: 18px;
       color: var(--navy);
     }
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 8px; margin-bottom: 16px;
+    }
+    .panel-header h2 { margin: 0; }
+    .panel-controls { display: flex; align-items: center; gap: 14px; }
+    .toggle {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; color: var(--muted); cursor: pointer; user-select: none;
+    }
+    .toggle input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+    .btn-ghost {
+      cursor: pointer; border: 1px solid #ddd; border-radius: 999px;
+      padding: 6px 14px; font-size: 13px; font-weight: 600;
+      background: #fff; color: var(--navy);
+    }
+    .btn-ghost:hover { background: #f4f6fb; }
 
     .sources { display: flex; gap: 16px; flex-wrap: wrap; }
     .source-card {
@@ -136,7 +153,16 @@
 
   <div class="container">
     <section class="panel">
-      <h2>Сбор данных по источникам</h2>
+      <div class="panel-header">
+        <h2>Сбор данных по источникам</h2>
+        <div class="panel-controls">
+          <button type="button" id="refresh-status-btn" class="btn-ghost">Обновить статус</button>
+          <label class="toggle">
+            <input type="checkbox" id="auto-refresh-toggle">
+            Автообновление статуса
+          </label>
+        </div>
+      </div>
       <div class="sources">
         {% for src in sources %}
         {% set status = collect_status.get(src.name, 'idle') %}
@@ -230,34 +256,72 @@
   </div>
 
   <script>
-    // Опрашиваем статус источников, у которых сбор сейчас идёт, и
-    // перезагружаем страницу, когда он завершится — без ручного F5.
+    // Проверка статуса источников, у которых сейчас идёт сбор. По умолчанию
+    // только вручную (кнопка «Обновить статус»); автообновление — опция,
+    // включается чекбоксом и запоминается в браузере.
     const runningCards = Array.from(document.querySelectorAll('.source-card'))
       .filter(card => card.querySelector('.progress'));
 
-    if (runningCards.length > 0) {
-      const poll = async () => {
-        let anyStillRunning = false;
-        for (const card of runningCards) {
-          const source = card.dataset.source;
-          try {
-            const res = await fetch(`/api/collect/${encodeURIComponent(source)}/status`);
-            const data = await res.json();
-            if (data.status === 'running') {
-              anyStillRunning = true;
-            } else {
-              location.reload();
-              return;
-            }
-          } catch (e) {
+    const checkStatusOnce = async () => {
+      if (runningCards.length === 0) return;
+      let anyStillRunning = false;
+      for (const card of runningCards) {
+        const source = card.dataset.source;
+        try {
+          const res = await fetch(`/api/collect/${encodeURIComponent(source)}/status`);
+          const data = await res.json();
+          if (data.status === 'running') {
             anyStillRunning = true;
+          } else {
+            location.reload();
+            return;
           }
+        } catch (e) {
+          anyStillRunning = true;
         }
-        if (anyStillRunning) {
-          setTimeout(poll, 3000);
+      }
+      return anyStillRunning;
+    };
+
+    const refreshBtn = document.getElementById('refresh-status-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => checkStatusOnce());
+    }
+
+    const AUTO_REFRESH_KEY = 'partsMonitorAutoRefresh';
+    const autoToggle = document.getElementById('auto-refresh-toggle');
+    let autoTimer = null;
+
+    const stopAutoRefresh = () => {
+      if (autoTimer) {
+        clearTimeout(autoTimer);
+        autoTimer = null;
+      }
+    };
+
+    const scheduleAutoRefresh = () => {
+      stopAutoRefresh();
+      autoTimer = setTimeout(async () => {
+        const stillRunning = await checkStatusOnce();
+        if (stillRunning && autoToggle.checked) {
+          scheduleAutoRefresh();
         }
-      };
-      setTimeout(poll, 3000);
+      }, 3000);
+    };
+
+    if (autoToggle) {
+      autoToggle.checked = localStorage.getItem(AUTO_REFRESH_KEY) === '1';
+      if (autoToggle.checked && runningCards.length > 0) {
+        scheduleAutoRefresh();
+      }
+      autoToggle.addEventListener('change', () => {
+        localStorage.setItem(AUTO_REFRESH_KEY, autoToggle.checked ? '1' : '0');
+        if (autoToggle.checked) {
+          scheduleAutoRefresh();
+        } else {
+          stopAutoRefresh();
+        }
+      });
     }
   </script>
 </body>
