@@ -47,9 +47,9 @@ def dashboard(request: Request):
         sources = get_sources_summary(session)
 
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         {
-            "request": request,
             "rows": rows,
             "review_rows": review_rows,
             "sources": sources,
