@@ -1,0 +1,12 @@
+meta:
+  environment: python
+  toolchain:
+    name: docker
+
+build:
+  dockerfile: Dockerfile
+
+run:
+  persistenceMount: /data
+  containerPort: 8000
+  command: python -m parts_monitor.cli collect --source aodesf7
