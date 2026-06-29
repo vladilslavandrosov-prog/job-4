@@ -24,18 +24,18 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 _collect_status: dict[str, str] = {}
 
-
-def _database_url() -> str | None:
-    return os.environ.get("DATABASE_URL")
+# Один engine на весь процесс — иначе каждый запрос открывает новый пул
+# соединений к Postgres, который никогда не закрывается, и через какое-то
+# время количество открытых соединений превышает лимит БД (500 на /).
+_engine = get_engine(os.environ.get("DATABASE_URL"))
+init_db(_engine)
 
 
 def _run_collect_and_match(source_key: str) -> None:
     try:
         _collect_status[source_key] = "running"
-        collect(source_key, _database_url())
-        engine = get_engine(_database_url())
-        init_db(engine)
-        with get_session(engine) as session:
+        collect(source_key, _engine)
+        with get_session(_engine) as session:
             run_matching(session)
         _collect_status[source_key] = "done"
     except Exception as exc:  # noqa: BLE001 — статус для фронта, не даём упасть воркеру
@@ -44,9 +44,7 @@ def _run_collect_and_match(source_key: str) -> None:
 
 @app.get("/")
 def dashboard(request: Request):
-    engine = get_engine(_database_url())
-    init_db(engine)
-    with get_session(engine) as session:
+    with get_session(_engine) as session:
         rows = get_dashboard_rows(session)
         review_rows = get_review_queue_rows(session)
         counts_by_name = {s["name"]: s["product_count"] for s in get_sources_summary(session)}
@@ -73,9 +71,7 @@ def source_history(source_key: str, request: Request):
     if source_key not in ADAPTERS:
         return RedirectResponse(url="/", status_code=303)
 
-    engine = get_engine(_database_url())
-    init_db(engine)
-    with get_session(engine) as session:
+    with get_session(_engine) as session:
         rows = get_source_price_history(session, source_key)
 
     return templates.TemplateResponse(

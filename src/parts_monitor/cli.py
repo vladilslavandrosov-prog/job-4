@@ -16,11 +16,17 @@ ADAPTERS = {
 }
 
 
-def collect(source_key: str, database_url: str | None = None) -> int:
+def collect(source_key: str, database_url_or_engine=None) -> int:
+    """database_url_or_engine: строка подключения, либо уже созданный Engine
+    (веб-приложение передаёт свой общий engine, чтобы не открывать новый пул
+    соединений на каждый запуск сбора)."""
     adapter_cls = ADAPTERS[source_key]
     adapter = adapter_cls()
 
-    engine = get_engine(database_url)
+    if isinstance(database_url_or_engine, str) or database_url_or_engine is None:
+        engine = get_engine(database_url_or_engine)
+    else:
+        engine = database_url_or_engine
     init_db(engine)
 
     saved = 0
