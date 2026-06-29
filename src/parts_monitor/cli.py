@@ -7,6 +7,7 @@ import time
 from .adapters.aodes_mdv import AodesMdvAdapter
 from .adapters.aodesf7 import AodesF7Adapter
 from .db import PriceHistory, Product, Source, get_engine, get_session, init_db
+from .matching import run_matching
 from .normalizer import normalize_name, normalize_sku
 
 ADAPTERS = {
@@ -105,6 +106,13 @@ def run_menu(database_url: str | None = None) -> None:
                 print(f"[{source_key}] пропущено: {exc}")
 
 
+def match(database_url: str | None = None) -> dict[str, int]:
+    engine = get_engine(database_url)
+    init_db(engine)
+    with get_session(engine) as session:
+        return run_matching(session)
+
+
 def run_forever(source_key: str, database_url: str | None, interval_seconds: int) -> None:
     """Долгоживущий процесс: сбор по расписанию, без выхода.
 
@@ -141,6 +149,9 @@ def main() -> None:
         default=int(os.environ.get("COLLECT_INTERVAL_SECONDS", "3600")),
     )
 
+    match_parser = sub.add_parser("match", help="Прогнать Matching Engine по всем собранным товарам")
+    match_parser.add_argument("--database-url", default=None)
+
     args = parser.parse_args()
 
     if args.command == "collect":
@@ -150,6 +161,9 @@ def main() -> None:
         run_menu(args.database_url)
     elif args.command == "serve":
         run_forever(args.source, args.database_url, args.interval_seconds)
+    elif args.command == "match":
+        stats = match(args.database_url)
+        print(f"Matching завершён: {stats}")
 
 
 if __name__ == "__main__":
