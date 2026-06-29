@@ -1,7 +1,5 @@
 meta:
-  environment: python
-  toolchain:
-    name: docker
+  environment: docker
 
 build:
   dockerfile: Dockerfile
