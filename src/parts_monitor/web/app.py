@@ -44,7 +44,11 @@ def dashboard(request: Request):
     with get_session(engine) as session:
         rows = get_dashboard_rows(session)
         review_rows = get_review_queue_rows(session)
-        sources = get_sources_summary(session)
+        counts_by_name = {s["name"]: s["product_count"] for s in get_sources_summary(session)}
+
+    sources = [
+        {"name": key, "product_count": counts_by_name.get(key, 0)} for key in ADAPTERS
+    ]
 
     return templates.TemplateResponse(
         request,
