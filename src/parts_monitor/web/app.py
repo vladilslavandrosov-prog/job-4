@@ -1,6 +1,7 @@
 """FastAPI-приложение: дашборд сравнения цен + ручной запуск сбора с фронта."""
 
 import os
+import time
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, Request
@@ -28,7 +29,18 @@ _collect_status: dict[str, str] = {}
 # соединений к Postgres, который никогда не закрывается, и через какое-то
 # время количество открытых соединений превышает лимит БД (500 на /).
 _engine = get_engine(os.environ.get("DATABASE_URL"))
-init_db(_engine)
+
+# Postgres-контейнер на Amvera может стартовать позже веб-процесса — ретраим
+# init_db при старте, иначе приложение падает при импорте и Amvera отдаёт
+# 503 (порт так и не открывается), а не просто ошибку отдельного запроса.
+for _attempt in range(10):
+    try:
+        init_db(_engine)
+        break
+    except Exception:
+        if _attempt == 9:
+            raise
+        time.sleep(2)
 
 
 def _run_collect_and_match(source_key: str) -> None:
