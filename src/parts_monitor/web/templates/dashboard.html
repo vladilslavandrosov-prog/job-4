@@ -71,7 +71,38 @@
       box-shadow: 0 8px 16px -8px rgba(255,122,89,0.6);
     }
     .btn:hover { filter: brightness(1.05); }
+    .btn:disabled { cursor: not-allowed; filter: grayscale(0.3) brightness(0.95); }
     .status { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+    .progress {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--accent); margin-top: 8px; font-weight: 600;
+    }
+    .spinner {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 2px solid #fde4d4; border-top-color: var(--accent);
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .progress-bar {
+      position: relative; height: 6px; border-radius: 999px;
+      background: #fde4d4; overflow: hidden; margin-top: 8px;
+    }
+    .progress-bar .fill {
+      position: absolute; top: 0; bottom: 0; width: 40%;
+      background: linear-gradient(90deg, var(--accent), #ff9a76);
+      border-radius: 999px;
+      animation: indeterminate 1.2s ease-in-out infinite;
+    }
+    @keyframes indeterminate {
+      0% { left: -40%; }
+      100% { left: 100%; }
+    }
+
+    .status-done { color: #15803d; font-weight: 600; }
+    .status-error { color: #b91c1c; font-weight: 600; }
 
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 12px 14px; text-align: left; font-size: 14px; }
@@ -108,16 +139,24 @@
       <h2>Сбор данных по источникам</h2>
       <div class="sources">
         {% for src in sources %}
-        <div class="source-card">
+        {% set status = collect_status.get(src.name, 'idle') %}
+        <div class="source-card" data-source="{{ src.name }}">
           <div class="name">{{ src.name }}</div>
           <div class="count">товаров в базе: {{ src.product_count }}</div>
           <form method="post" action="/collect/{{ src.name }}">
-            <button class="btn" type="submit">Обновить с сайта</button>
+            <button class="btn" type="submit" {{ 'disabled' if status == 'running' else '' }}>Обновить с сайта</button>
           </form>
           <div class="status"><a href="/source/{{ src.name }}">Динамика цен →</a></div>
-          {% if collect_status.get(src.name) %}
-          <div class="status">статус: {{ collect_status[src.name] }}</div>
-          {% endif %}
+          <div class="status-slot">
+            {% if status == 'running' %}
+            <div class="progress"><span class="spinner"></span> идёт сбор и сопоставление…</div>
+            <div class="progress-bar"><div class="fill"></div></div>
+            {% elif status == 'done' %}
+            <div class="status status-done">готово</div>
+            {% elif status.startswith('error') %}
+            <div class="status status-error">{{ status }}</div>
+            {% endif %}
+          </div>
         </div>
         {% endfor %}
       </div>
@@ -189,5 +228,37 @@
       {% endif %}
     </section>
   </div>
+
+  <script>
+    // Опрашиваем статус источников, у которых сбор сейчас идёт, и
+    // перезагружаем страницу, когда он завершится — без ручного F5.
+    const runningCards = Array.from(document.querySelectorAll('.source-card'))
+      .filter(card => card.querySelector('.progress'));
+
+    if (runningCards.length > 0) {
+      const poll = async () => {
+        let anyStillRunning = false;
+        for (const card of runningCards) {
+          const source = card.dataset.source;
+          try {
+            const res = await fetch(`/api/collect/${encodeURIComponent(source)}/status`);
+            const data = await res.json();
+            if (data.status === 'running') {
+              anyStillRunning = true;
+            } else {
+              location.reload();
+              return;
+            }
+          } catch (e) {
+            anyStillRunning = true;
+          }
+        }
+        if (anyStillRunning) {
+          setTimeout(poll, 3000);
+        }
+      };
+      setTimeout(poll, 3000);
+    }
+  </script>
 </body>
 </html>
