@@ -11,4 +11,4 @@ run:
   persistenceMount: /data
   containerPort: 8000
   command: python
-  args: -m parts_monitor.cli collect --source aodesf7
+  args: -m parts_monitor.cli serve --source aodesf7

@@ -1,6 +1,8 @@
 """CLI: `python -m parts_monitor.cli collect` — собрать каталог и сохранить в БД."""
 
 import argparse
+import os
+import time
 
 from .adapters.aodes_mdv import AodesMdvAdapter
 from .adapters.aodesf7 import AodesF7Adapter
@@ -103,16 +105,41 @@ def run_menu(database_url: str | None = None) -> None:
                 print(f"[{source_key}] пропущено: {exc}")
 
 
+def run_forever(source_key: str, database_url: str | None, interval_seconds: int) -> None:
+    """Долгоживущий процесс: сбор по расписанию, без выхода.
+
+    Нужен для хостингов (Amvera и т.п.), которые держат сервис как
+    постоянно работающий и перезапускают контейнер по back-off, если
+    процесс завершается (даже успешно)."""
+    while True:
+        try:
+            saved = collect(source_key, database_url)
+            print(f"[{source_key}] сохранено снимков цен: {saved}", flush=True)
+        except Exception as exc:  # noqa: BLE001 — не даём процессу упасть между циклами
+            print(f"[{source_key}] ошибка сбора: {exc}", flush=True)
+
+        time.sleep(interval_seconds)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Parts price monitor CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    collect_parser = sub.add_parser("collect", help="Собрать каталог одного источника и сохранить в БД")
+    collect_parser = sub.add_parser("collect", help="Собрать каталог одного источника и сохранить в БД (один раз)")
     collect_parser.add_argument("--source", default="aodesf7", choices=ADAPTERS.keys())
     collect_parser.add_argument("--database-url", default=None)
 
     menu_parser = sub.add_parser("menu", help="Интерактивное меню: выбор источника отдельной строкой")
     menu_parser.add_argument("--database-url", default=None)
+
+    serve_parser = sub.add_parser("serve", help="Долгоживущий процесс: сбор по расписанию, не завершается")
+    serve_parser.add_argument("--source", default="aodesf7", choices=ADAPTERS.keys())
+    serve_parser.add_argument("--database-url", default=None)
+    serve_parser.add_argument(
+        "--interval-seconds",
+        type=int,
+        default=int(os.environ.get("COLLECT_INTERVAL_SECONDS", "3600")),
+    )
 
     args = parser.parse_args()
 
@@ -121,6 +148,8 @@ def main() -> None:
         print(f"Сохранено снимков цен: {saved}")
     elif args.command == "menu":
         run_menu(args.database_url)
+    elif args.command == "serve":
+        run_forever(args.source, args.database_url, args.interval_seconds)
 
 
 if __name__ == "__main__":
