@@ -31,13 +31,17 @@ def collect(source_key: str, database_url: str | None = None) -> int:
             session.add(source)
             session.flush()
 
+        # Один запрос вместо SELECT на каждый товар (N+1) — иначе сбор
+        # нескольких тысяч позиций занимает минуты из-за сетевых round-trip'ов.
+        existing_by_sku: dict[str, Product] = {
+            p.sku: p for p in session.query(Product).filter_by(source_id=source.id).all()
+        }
+
+        pending_history: list[PriceHistory] = []
+
         for category in adapter.fetch_categories():
             for item in adapter.fetch_items(category):
-                product = (
-                    session.query(Product)
-                    .filter_by(source_id=source.id, sku=item.sku)
-                    .first()
-                )
+                product = existing_by_sku.get(item.sku)
                 if product is None:
                     product = Product(
                         source_id=source.id,
@@ -48,13 +52,13 @@ def collect(source_key: str, database_url: str | None = None) -> int:
                         unverified=item.unverified,
                     )
                     session.add(product)
-                    session.flush()
+                    existing_by_sku[item.sku] = product
                 else:
                     product.name = normalize_name(item.name) and item.name
 
-                session.add(
+                pending_history.append(
                     PriceHistory(
-                        product_id=product.id,
+                        product=product,
                         price=item.price,
                         currency=item.currency,
                         scraped_at=item.scraped_at,
@@ -62,6 +66,8 @@ def collect(source_key: str, database_url: str | None = None) -> int:
                 )
                 saved += 1
 
+        session.flush()  # назначить id новым Product перед сохранением истории цен
+        session.add_all(pending_history)
         session.commit()
 
     return saved
