@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..db import MatchGroup, PriceHistory, Product, ProductMatch, Source
 
@@ -113,6 +113,7 @@ def get_review_queue_rows(session: Session):
 
     queue = (
         session.query(MatchReviewQueue)
+        .options(joinedload(MatchReviewQueue.product_a), joinedload(MatchReviewQueue.product_b))
         .filter_by(status="pending")
         .order_by(MatchReviewQueue.similarity.desc())
         .all()
