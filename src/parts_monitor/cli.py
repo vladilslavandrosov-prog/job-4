@@ -152,6 +152,10 @@ def main() -> None:
     match_parser = sub.add_parser("match", help="Прогнать Matching Engine по всем собранным товарам")
     match_parser.add_argument("--database-url", default=None)
 
+    web_parser = sub.add_parser("web", help="Запустить веб-дашборд с ручным запуском сбора")
+    web_parser.add_argument("--host", default="0.0.0.0")
+    web_parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
+
     args = parser.parse_args()
 
     if args.command == "collect":
@@ -164,6 +168,10 @@ def main() -> None:
     elif args.command == "match":
         stats = match(args.database_url)
         print(f"Matching завершён: {stats}")
+    elif args.command == "web":
+        import uvicorn
+
+        uvicorn.run("parts_monitor.web.app:app", host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

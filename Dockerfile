@@ -10,4 +10,4 @@ COPY pyproject.toml ./
 
 ENV PYTHONPATH=/app/src
 
-CMD ["python", "-m", "parts_monitor.cli", "serve", "--source", "aodesf7"]
+CMD ["python", "-m", "parts_monitor.cli", "web"]
