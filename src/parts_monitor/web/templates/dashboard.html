@@ -114,6 +114,7 @@
           <form method="post" action="/collect/{{ src.name }}">
             <button class="btn" type="submit">Обновить с сайта</button>
           </form>
+          <div class="status"><a href="/source/{{ src.name }}">Динамика цен →</a></div>
           {% if collect_status.get(src.name) %}
           <div class="status">статус: {{ collect_status[src.name] }}</div>
           {% endif %}

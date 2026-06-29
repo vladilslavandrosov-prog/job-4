@@ -10,7 +10,12 @@ from fastapi.templating import Jinja2Templates
 from ..cli import ADAPTERS, collect
 from ..db import get_engine, get_session, init_db
 from ..matching import run_matching
-from .queries import get_dashboard_rows, get_review_queue_rows, get_sources_summary
+from .queries import (
+    get_dashboard_rows,
+    get_review_queue_rows,
+    get_source_price_history,
+    get_sources_summary,
+)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -59,6 +64,27 @@ def dashboard(request: Request):
             "sources": sources,
             "adapter_keys": list(ADAPTERS.keys()),
             "collect_status": _collect_status,
+        },
+    )
+
+
+@app.get("/source/{source_key}")
+def source_history(source_key: str, request: Request):
+    if source_key not in ADAPTERS:
+        return RedirectResponse(url="/", status_code=303)
+
+    engine = get_engine(_database_url())
+    init_db(engine)
+    with get_session(engine) as session:
+        rows = get_source_price_history(session, source_key)
+
+    return templates.TemplateResponse(
+        request,
+        "source.html",
+        {
+            "source_key": source_key,
+            "rows": rows,
+            "collect_status": _collect_status.get(source_key, "idle"),
         },
     )
 
